@@ -29,7 +29,7 @@ class EmptyInput(BaseModel):
 class WeatherApp:
     """LangChain-based weather application using MCP."""
 
-    def __init__(self, model_name: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, model_name: str = "claude-3-5-sonnet-20240620"):
         """Initialize the weather app."""
         self.model_name = model_name
         self.session: Optional[ClientSession] = None
