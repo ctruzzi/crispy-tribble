@@ -84,52 +84,66 @@ class WeatherApp:
         result = await self.session.call_tool(tool_name, arguments)
         return result.content[0].text
 
+    def _create_tool_handler(self, tool_name: str):
+        """Factory function to create a tool handler with proper closure."""
+        async def handler(**kwargs) -> str:
+            """Dynamic tool handler that calls the MCP tool."""
+            result = await self.call_mcp_tool(tool_name, kwargs)
+            return result
+        return handler
+
+    def _get_args_schema(self, mcp_tool):
+        """Determine the appropriate args schema based on the tool's input schema."""
+        properties = mcp_tool.inputSchema.get("properties", {})
+        required = mcp_tool.inputSchema.get("required", [])
+
+        # If the tool has a "city" parameter, use WeatherInput
+        if "city" in properties:
+            return WeatherInput
+
+        # If the tool has no parameters, use EmptyInput
+        if not properties:
+            return EmptyInput
+
+        # For other cases, dynamically create a Pydantic model
+        # This handles future tools with different parameters
+        fields = {}
+        for prop_name, prop_schema in properties.items():
+            field_type = str  # Default to string type
+            field_description = prop_schema.get("description", "")
+            is_required = prop_name in required
+
+            if is_required:
+                fields[prop_name] = (field_type, Field(description=field_description))
+            else:
+                fields[prop_name] = (field_type, Field(default=None, description=field_description))
+
+        # Create a dynamic Pydantic model
+        return type(f"{mcp_tool.name}_input", (BaseModel,), {"__annotations__": {k: v[0] for k, v in fields.items()}, **{k: v[1] for k, v in fields.items()}})
+
     def create_langchain_tools(self, mcp_tools):
-        """Convert MCP tools to LangChain tools."""
+        """Convert MCP tools to LangChain tools dynamically.
+
+        This method automatically converts any MCP tool to a LangChain tool
+        without requiring hard-coded handlers for each tool.
+        """
         langchain_tools = []
 
         for mcp_tool in mcp_tools:
-            if mcp_tool.name == "get_current_weather":
-                async def get_current_weather(city: str) -> str:
-                    """Get current weather for a city."""
-                    result = await self.call_mcp_tool("get_current_weather", {"city": city})
-                    return result
+            # Create a handler function for this specific tool
+            handler = self._create_tool_handler(mcp_tool.name)
 
-                tool = StructuredTool.from_function(
-                    coroutine=get_current_weather,
-                    name="get_current_weather",
-                    description=mcp_tool.description,
-                    args_schema=WeatherInput
-                )
-                langchain_tools.append(tool)
+            # Determine the appropriate args schema
+            args_schema = self._get_args_schema(mcp_tool)
 
-            elif mcp_tool.name == "get_forecast":
-                async def get_forecast(city: str) -> str:
-                    """Get 5-day forecast for a city."""
-                    result = await self.call_mcp_tool("get_forecast", {"city": city})
-                    return result
-
-                tool = StructuredTool.from_function(
-                    coroutine=get_forecast,
-                    name="get_forecast",
-                    description=mcp_tool.description,
-                    args_schema=WeatherInput
-                )
-                langchain_tools.append(tool)
-
-            elif mcp_tool.name == "list_available_cities":
-                async def list_cities() -> str:
-                    """List all available cities."""
-                    result = await self.call_mcp_tool("list_available_cities", {})
-                    return result
-
-                tool = StructuredTool.from_function(
-                    coroutine=list_cities,
-                    name="list_available_cities",
-                    description=mcp_tool.description,
-                    args_schema=EmptyInput
-                )
-                langchain_tools.append(tool)
+            # Create the LangChain tool
+            tool = StructuredTool.from_function(
+                coroutine=handler,
+                name=mcp_tool.name,
+                description=mcp_tool.description,
+                args_schema=args_schema
+            )
+            langchain_tools.append(tool)
 
         return langchain_tools
 

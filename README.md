@@ -166,13 +166,18 @@ The decorator automatically:
 
 ### LangChain App (`weather_app.py`)
 
-The LangChain application orchestrates the weather assistant:
+The LangChain application orchestrates the weather assistant with a dynamic tool conversion system:
 
 1. **Connection**: Establishes a connection to the MCP server using stdio transport
 2. **Tool Discovery**: Queries the MCP server for available tools
-3. **Tool Conversion**: Converts MCP tools to LangChain-compatible tools
+3. **Dynamic Tool Conversion**: Automatically converts ANY MCP tool to LangChain format without hard-coding
+   - Factory function creates handlers with proper closures for each tool
+   - Automatic args schema detection from MCP tool's input schema
+   - Supports tools with city parameters, no parameters, or custom parameters
 4. **Agent Creation**: Creates a tool-calling agent with Claude (Anthropic)
 5. **Interactive Loop**: Processes user queries and generates responses
+
+**Key Feature**: When you add a new tool to the MCP server using the `@mcp_tool` decorator, the LangChain app automatically discovers and uses it - no code changes needed in `weather_app.py`!
 
 ## Customization
 
@@ -203,9 +208,9 @@ app = WeatherApp(model_name="claude-3-opus-20240229")
 
 ### Adding New Tools
 
-Adding a new tool is now much simpler with the decorator-based architecture:
+Adding a new tool is incredibly simple - just add it to `mcp_server.py` and you're done!
 
-**1. Define the tool in `mcp_server.py`:**
+**Define the tool in `mcp_server.py`:**
 ```python
 @mcp_tool(
     name="get_humidity",
@@ -233,23 +238,13 @@ async def get_humidity(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(result))]
 ```
 
-**2. Update `weather_app.py`'s `create_langchain_tools()` method:**
-```python
-elif mcp_tool.name == "get_humidity":
-    async def get_humidity(city: str) -> str:
-        result = await self.call_mcp_tool("get_humidity", {"city": city})
-        return result
+**That's it!** The tool is automatically:
+- Registered in the MCP server via the `@mcp_tool` decorator
+- Discovered by the LangChain app when it connects
+- Converted to a LangChain-compatible tool with proper args schema
+- Made available to Claude for use in conversations
 
-    tool = StructuredTool.from_function(
-        coroutine=get_humidity,
-        name="get_humidity",
-        description=mcp_tool.description,
-        args_schema=WeatherInput
-    )
-    langchain_tools.append(tool)
-```
-
-That's it! The `@mcp_tool` decorator handles all the registration automatically.
+No changes needed to `weather_app.py` - the dynamic tool conversion handles everything automatically!
 
 ## Requirements
 
