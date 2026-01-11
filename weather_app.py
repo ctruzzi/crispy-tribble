@@ -8,10 +8,10 @@ weather-related questions using natural language.
 import asyncio
 import json
 from typing import Any, Optional
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain.prompts import ChatPromptTemplate
-from langchain.tools import StructuredTool
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import StructuredTool
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pydantic import BaseModel, Field
@@ -33,7 +33,8 @@ class WeatherApp:
         """Initialize the weather app."""
         self.model_name = model_name
         self.session: Optional[ClientSession] = None
-        self.agent_executor: Optional[AgentExecutor] = None
+        self.llm = None
+        self.tools = []
 
     async def connect_to_mcp(self):
         """Connect to the MCP weather server."""
@@ -133,42 +134,72 @@ class WeatherApp:
         print(f"✓ Loaded {len(mcp_tools)} tools from MCP server")
 
         # Convert to LangChain tools
-        langchain_tools = self.create_langchain_tools(mcp_tools)
+        self.tools = self.create_langchain_tools(mcp_tools)
 
-        # Create the prompt template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a helpful weather assistant. You have access to weather data
-for various cities through the available tools. When users ask about weather, use the
-appropriate tools to fetch the information and provide clear, conversational responses.
-
-Available cities: New York, London, Tokyo, Paris, Sydney
-
-If a user asks about a city not in the list, politely inform them and suggest available cities."""),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ])
-
-        # Initialize the LLM
-        llm = ChatAnthropic(model=self.model_name)
-
-        # Create the agent
-        agent = create_tool_calling_agent(llm, langchain_tools, prompt)
-        self.agent_executor = AgentExecutor(
-            agent=agent,
-            tools=langchain_tools,
-            verbose=True,
-            handle_parsing_errors=True
-        )
+        # Initialize the LLM with tool binding
+        self.llm = ChatAnthropic(model=self.model_name).bind_tools(self.tools)
 
         print("✓ LangChain agent initialized")
 
     async def ask(self, question: str) -> str:
         """Ask the agent a weather-related question."""
-        if not self.agent_executor:
+        if not self.llm:
             raise RuntimeError("Agent not initialized")
 
-        response = await self.agent_executor.ainvoke({"input": question})
-        return response["output"]
+        # System message
+        system_msg = """You are a helpful weather assistant. You have access to weather data
+for various cities through the available tools. When users ask about weather, use the
+appropriate tools to fetch the information and provide clear, conversational responses.
+
+Available cities: New York, London, Tokyo, Paris, Sydney
+
+If a user asks about a city not in the list, politely inform them and suggest available cities."""
+
+        # Start conversation
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": question}
+        ]
+
+        # Agent loop - max 10 iterations to prevent infinite loops
+        for _ in range(10):
+            # Get response from LLM
+            response = await self.llm.ainvoke(messages)
+
+            # Add assistant response to messages
+            messages.append(response)
+
+            # Check if there are tool calls
+            if not response.tool_calls:
+                # No more tool calls, return the final answer
+                return response.content
+
+            # Execute tool calls
+            for tool_call in response.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+
+                # Find and execute the tool
+                tool_result = None
+                for tool in self.tools:
+                    if tool.name == tool_name:
+                        try:
+                            tool_result = await tool.ainvoke(tool_args)
+                        except Exception as e:
+                            tool_result = f"Error executing tool: {str(e)}"
+                        break
+
+                if tool_result is None:
+                    tool_result = f"Tool {tool_name} not found"
+
+                # Add tool result to messages
+                messages.append({
+                    "role": "tool",
+                    "content": str(tool_result),
+                    "tool_call_id": tool_call["id"]
+                })
+
+        return "Sorry, I couldn't process your request. Please try again."
 
     async def run_interactive(self):
         """Run the app in interactive mode."""
