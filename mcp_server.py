@@ -2,10 +2,12 @@
 MCP Server with Mock Weather Endpoints
 
 This server exposes mock weather data endpoints via the Model Context Protocol (MCP).
+Each tool is defined with its own handler function for better modularity.
 """
 
 import json
 from datetime import datetime
+from typing import Callable, Any
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 import mcp.server.stdio
@@ -54,128 +56,175 @@ MOCK_WEATHER_DATA = {
 # Initialize MCP server
 server = Server("weather-service")
 
+# Tool registry to map tool names to handlers and definitions
+TOOL_HANDLERS: dict[str, Callable] = {}
+TOOL_DEFINITIONS: list[Tool] = []
+
+
+def mcp_tool(name: str, description: str, input_schema: dict):
+    """Decorator to register an MCP tool handler.
+
+    Args:
+        name: The name of the tool
+        description: Description of what the tool does
+        input_schema: JSON schema for the tool's input parameters
+    """
+    def decorator(func: Callable) -> Callable:
+        # Register the handler
+        TOOL_HANDLERS[name] = func
+
+        # Register the tool definition
+        TOOL_DEFINITIONS.append(
+            Tool(
+                name=name,
+                description=description,
+                inputSchema=input_schema
+            )
+        )
+
+        return func
+    return decorator
+
+
+# ============================================================================
+# Tool Handlers - Each tool is defined with its own handler
+# ============================================================================
+
+@mcp_tool(
+    name="get_current_weather",
+    description="Get the current weather for a specific city. Returns temperature, condition, humidity, and wind speed.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "The city name (e.g., 'New York', 'London', 'Tokyo')"
+            }
+        },
+        "required": ["city"]
+    }
+)
+async def get_current_weather(arguments: dict) -> list[TextContent]:
+    """Get current weather for a city."""
+    city = arguments.get("city", "").lower()
+
+    if city not in MOCK_WEATHER_DATA:
+        return [TextContent(
+            type="text",
+            text=json.dumps({
+                "error": f"Weather data not available for '{city}'. Available cities: {', '.join(MOCK_WEATHER_DATA.keys())}"
+            })
+        )]
+
+    weather = MOCK_WEATHER_DATA[city]
+    result = {
+        "city": city.title(),
+        "timestamp": datetime.now().isoformat(),
+        "temperature": weather["temperature"],
+        "temperature_unit": "Fahrenheit",
+        "condition": weather["condition"],
+        "humidity": weather["humidity"],
+        "humidity_unit": "%",
+        "wind_speed": weather["wind_speed"],
+        "wind_speed_unit": "mph"
+    }
+
+    return [TextContent(
+        type="text",
+        text=json.dumps(result, indent=2)
+    )]
+
+
+@mcp_tool(
+    name="get_forecast",
+    description="Get a 5-day weather forecast for a specific city.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "The city name (e.g., 'New York', 'London', 'Tokyo')"
+            }
+        },
+        "required": ["city"]
+    }
+)
+async def get_forecast(arguments: dict) -> list[TextContent]:
+    """Get 5-day forecast for a city."""
+    city = arguments.get("city", "").lower()
+
+    if city not in MOCK_WEATHER_DATA:
+        return [TextContent(
+            type="text",
+            text=json.dumps({
+                "error": f"Weather data not available for '{city}'. Available cities: {', '.join(MOCK_WEATHER_DATA.keys())}"
+            })
+        )]
+
+    weather = MOCK_WEATHER_DATA[city]
+    forecast_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+    result = {
+        "city": city.title(),
+        "forecast": [
+            {
+                "day": day,
+                "condition": condition
+            }
+            for day, condition in zip(forecast_days, weather["forecast"])
+        ]
+    }
+
+    return [TextContent(
+        type="text",
+        text=json.dumps(result, indent=2)
+    )]
+
+
+@mcp_tool(
+    name="list_available_cities",
+    description="List all cities with available weather data.",
+    input_schema={
+        "type": "object",
+        "properties": {}
+    }
+)
+async def list_available_cities(arguments: dict) -> list[TextContent]:
+    """List all cities with available weather data."""
+    result = {
+        "available_cities": [city.title() for city in MOCK_WEATHER_DATA.keys()]
+    }
+
+    return [TextContent(
+        type="text",
+        text=json.dumps(result, indent=2)
+    )]
+
+
+# ============================================================================
+# MCP Server Handlers
+# ============================================================================
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available weather tools."""
-    return [
-        Tool(
-            name="get_current_weather",
-            description="Get the current weather for a specific city. Returns temperature, condition, humidity, and wind speed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "The city name (e.g., 'New York', 'London', 'Tokyo')"
-                    }
-                },
-                "required": ["city"]
-            }
-        ),
-        Tool(
-            name="get_forecast",
-            description="Get a 5-day weather forecast for a specific city.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "The city name (e.g., 'New York', 'London', 'Tokyo')"
-                    }
-                },
-                "required": ["city"]
-            }
-        ),
-        Tool(
-            name="list_available_cities",
-            description="List all cities with available weather data.",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        )
-    ]
+    return TOOL_DEFINITIONS
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """Handle tool calls for weather data."""
+    """Dispatch tool calls to their registered handlers."""
+    # Look up the handler in the registry
+    handler = TOOL_HANDLERS.get(name)
 
-    if name == "get_current_weather":
-        city = arguments.get("city", "").lower()
-
-        if city not in MOCK_WEATHER_DATA:
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "error": f"Weather data not available for '{city}'. Available cities: {', '.join(MOCK_WEATHER_DATA.keys())}"
-                })
-            )]
-
-        weather = MOCK_WEATHER_DATA[city]
-        result = {
-            "city": city.title(),
-            "timestamp": datetime.now().isoformat(),
-            "temperature": weather["temperature"],
-            "temperature_unit": "Fahrenheit",
-            "condition": weather["condition"],
-            "humidity": weather["humidity"],
-            "humidity_unit": "%",
-            "wind_speed": weather["wind_speed"],
-            "wind_speed_unit": "mph"
-        }
-
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-
-    elif name == "get_forecast":
-        city = arguments.get("city", "").lower()
-
-        if city not in MOCK_WEATHER_DATA:
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "error": f"Weather data not available for '{city}'. Available cities: {', '.join(MOCK_WEATHER_DATA.keys())}"
-                })
-            )]
-
-        weather = MOCK_WEATHER_DATA[city]
-        forecast_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-
-        result = {
-            "city": city.title(),
-            "forecast": [
-                {
-                    "day": day,
-                    "condition": condition
-                }
-                for day, condition in zip(forecast_days, weather["forecast"])
-            ]
-        }
-
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-
-    elif name == "list_available_cities":
-        result = {
-            "available_cities": [city.title() for city in MOCK_WEATHER_DATA.keys()]
-        }
-
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-
-    else:
+    if handler is None:
         return [TextContent(
             type="text",
             text=json.dumps({"error": f"Unknown tool: {name}"})
         )]
+
+    # Call the handler
+    return await handler(arguments)
 
 
 async def main():

@@ -132,12 +132,37 @@ crispy-tribble/
 
 ### MCP Server (`mcp_server.py`)
 
-The MCP server implements the Model Context Protocol to expose weather tools:
+The MCP server implements the Model Context Protocol to expose weather tools using a clean, modular architecture:
 
-- Uses the `mcp` Python library to create a stdio-based server
-- Defines three tools with JSON schemas for input validation
-- Returns mock weather data in JSON format
-- Runs as a subprocess managed by the LangChain app
+- **Decorator-based Tool Registration**: Each tool is defined with the `@mcp_tool` decorator, which registers both the tool definition and its handler
+- **Individual Tool Handlers**: Each tool has its own dedicated async function, making it easy to add new tools
+- **Tool Registry**: A central registry maps tool names to their handlers for clean dispatch
+- **Stdio-based Server**: Uses the `mcp` Python library to communicate via stdin/stdout
+- **Mock Data**: Returns weather data from an in-memory dictionary
+
+**Adding a new tool is simple:**
+```python
+@mcp_tool(
+    name="get_temperature",
+    description="Get just the temperature for a city",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "City name"}
+        },
+        "required": ["city"]
+    }
+)
+async def get_temperature(arguments: dict) -> list[TextContent]:
+    city = arguments.get("city", "").lower()
+    # ... your implementation
+    return [TextContent(type="text", text=json.dumps(result))]
+```
+
+The decorator automatically:
+- Registers the tool in the tool registry
+- Adds it to the list of available tools
+- Wires up the handler for dispatch
 
 ### LangChain App (`weather_app.py`)
 
@@ -178,9 +203,53 @@ app = WeatherApp(model_name="claude-3-opus-20240229")
 
 ### Adding New Tools
 
-1. Add the tool definition in `mcp_server.py`'s `list_tools()` function
-2. Implement the tool logic in the `call_tool()` function
-3. Add the corresponding LangChain tool in `weather_app.py`'s `create_langchain_tools()` method
+Adding a new tool is now much simpler with the decorator-based architecture:
+
+**1. Define the tool in `mcp_server.py`:**
+```python
+@mcp_tool(
+    name="get_humidity",
+    description="Get humidity level for a specific city",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "The city name"
+            }
+        },
+        "required": ["city"]
+    }
+)
+async def get_humidity(arguments: dict) -> list[TextContent]:
+    city = arguments.get("city", "").lower()
+    if city not in MOCK_WEATHER_DATA:
+        return [TextContent(type="text", text=json.dumps({"error": "City not found"}))]
+
+    result = {
+        "city": city.title(),
+        "humidity": MOCK_WEATHER_DATA[city]["humidity"]
+    }
+    return [TextContent(type="text", text=json.dumps(result))]
+```
+
+**2. Update `weather_app.py`'s `create_langchain_tools()` method:**
+```python
+elif mcp_tool.name == "get_humidity":
+    async def get_humidity(city: str) -> str:
+        result = await self.call_mcp_tool("get_humidity", {"city": city})
+        return result
+
+    tool = StructuredTool.from_function(
+        coroutine=get_humidity,
+        name="get_humidity",
+        description=mcp_tool.description,
+        args_schema=WeatherInput
+    )
+    langchain_tools.append(tool)
+```
+
+That's it! The `@mcp_tool` decorator handles all the registration automatically.
 
 ## Requirements
 
