@@ -72,6 +72,16 @@ export ANTHROPIC_API_KEY='your-api-key-here'
 # On Windows: set ANTHROPIC_API_KEY=your-api-key-here
 ```
 
+5. (Optional) Check available models and set your preferred model:
+```bash
+# Check which Claude models are available on your account
+python check_models.py
+
+# Optionally set a specific model (defaults to claude-3-5-sonnet-20241022)
+export CLAUDE_MODEL='claude-3-5-sonnet-20241022'
+# On Windows: set CLAUDE_MODEL=claude-3-5-sonnet-20241022
+```
+
 ## Usage
 
 ### Running the Weather App
@@ -177,6 +187,37 @@ app = WeatherApp(model_name="claude-3-opus-20240229")
 - Python 3.8+
 - Anthropic API key (for Claude access)
 - Dependencies listed in `requirements.txt`
+
+## Troubleshooting
+
+### Model 404 Error
+
+If you get an error like `Error code: 404 - model not found`, this means the model isn't available on your Anthropic API account. To fix this:
+
+1. **Check available models:**
+   ```bash
+   python check_models.py
+   ```
+
+2. **Set the correct model:**
+   ```bash
+   export CLAUDE_MODEL='model-name-from-check-script'
+   ```
+
+3. **Common model names to try:**
+   - `claude-3-5-sonnet-20241022` (newest Claude 3.5 Sonnet)
+   - `claude-3-5-sonnet-20240620` (older Claude 3.5 Sonnet)
+   - `claude-3-opus-20240229` (Claude 3 Opus)
+   - `claude-3-sonnet-20240229` (Claude 3 Sonnet)
+   - `claude-3-haiku-20240307` (Claude 3 Haiku - fastest/cheapest)
+
+4. **Verify your API key** has access to Claude models by checking your [Anthropic Console](https://console.anthropic.com/)
+
+### Other Common Issues
+
+- **MCP connection errors**: Make sure `mcp_server.py` is in the same directory
+- **Import errors**: Run `pip install -r requirements.txt` to ensure all dependencies are installed
+- **API key not found**: Ensure `ANTHROPIC_API_KEY` environment variable is set
 
 ## Model Context Protocol (MCP)
 

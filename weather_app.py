@@ -7,6 +7,7 @@ weather-related questions using natural language.
 
 import asyncio
 import json
+import os
 from typing import Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import StructuredTool
@@ -29,9 +30,14 @@ class EmptyInput(BaseModel):
 class WeatherApp:
     """LangChain-based weather application using MCP."""
 
-    def __init__(self, model_name: str = "claude-3-5-sonnet-20240620"):
-        """Initialize the weather app."""
-        self.model_name = model_name
+    def __init__(self, model_name: str = None):
+        """Initialize the weather app.
+
+        Args:
+            model_name: Claude model to use. If not specified, reads from
+                       CLAUDE_MODEL env var, or defaults to claude-3-5-sonnet-20241022
+        """
+        self.model_name = model_name or os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
         self.session: Optional[ClientSession] = None
         self.llm = None
         self.tools = []
@@ -137,6 +143,7 @@ class WeatherApp:
         self.tools = self.create_langchain_tools(mcp_tools)
 
         # Initialize the LLM with tool binding
+        print(f"✓ Using model: {self.model_name}")
         self.llm = ChatAnthropic(model=self.model_name).bind_tools(self.tools)
 
         print("✓ LangChain agent initialized")
