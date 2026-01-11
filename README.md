@@ -1,0 +1,197 @@
+# LangChain Weather App with MCP
+
+A demonstration application that combines LangChain with the Model Context Protocol (MCP) to create an intelligent weather assistant. The app uses mock weather data exposed through MCP endpoints and leverages LangChain's agent capabilities for natural language interactions.
+
+## Features
+
+- **MCP Server**: Mock weather service exposing three tools via MCP:
+  - `get_current_weather`: Get current weather conditions for a city
+  - `get_forecast`: Get a 5-day weather forecast
+  - `list_available_cities`: List all cities with available weather data
+
+- **LangChain Integration**: Intelligent agent that:
+  - Understands natural language weather queries
+  - Automatically selects and uses appropriate MCP tools
+  - Provides conversational responses
+
+- **Mock Data**: Pre-configured weather data for:
+  - New York
+  - London
+  - Tokyo
+  - Paris
+  - Sydney
+
+## Architecture
+
+```
+┌─────────────────────┐
+│   User Input        │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  LangChain Agent    │
+│  (weather_app.py)   │
+└──────────┬──────────┘
+           │
+           │ MCP Protocol
+           ▼
+┌─────────────────────┐
+│   MCP Server        │
+│  (mcp_server.py)    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Mock Weather Data  │
+└─────────────────────┘
+```
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd crispy-tribble
+```
+
+2. Create a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+4. Set up your Anthropic API key:
+```bash
+export ANTHROPIC_API_KEY='your-api-key-here'
+# On Windows: set ANTHROPIC_API_KEY=your-api-key-here
+```
+
+## Usage
+
+### Running the Weather App
+
+Simply run the main application:
+
+```bash
+python weather_app.py
+```
+
+This will:
+1. Start the MCP server in the background
+2. Connect the LangChain agent to the MCP server
+3. Launch an interactive chat interface
+
+### Example Interactions
+
+```
+You: What's the weather like in New York?
+Assistant: The current weather in New York is partly cloudy with a
+temperature of 72°F. The humidity is at 65% and winds are blowing
+at 8 mph.
+
+You: Give me the forecast for London
+Assistant: Here's the 5-day forecast for London:
+- Monday: Rainy
+- Tuesday: Cloudy
+- Wednesday: Cloudy
+- Thursday: Partly Cloudy
+- Friday: Sunny
+
+You: Which cities can you give me weather for?
+Assistant: I can provide weather information for the following cities:
+New York, London, Tokyo, Paris, and Sydney.
+```
+
+## Project Structure
+
+```
+crispy-tribble/
+├── mcp_server.py        # MCP server with mock weather endpoints
+├── weather_app.py       # LangChain application
+├── requirements.txt     # Python dependencies
+└── README.md           # This file
+```
+
+## How It Works
+
+### MCP Server (`mcp_server.py`)
+
+The MCP server implements the Model Context Protocol to expose weather tools:
+
+- Uses the `mcp` Python library to create a stdio-based server
+- Defines three tools with JSON schemas for input validation
+- Returns mock weather data in JSON format
+- Runs as a subprocess managed by the LangChain app
+
+### LangChain App (`weather_app.py`)
+
+The LangChain application orchestrates the weather assistant:
+
+1. **Connection**: Establishes a connection to the MCP server using stdio transport
+2. **Tool Discovery**: Queries the MCP server for available tools
+3. **Tool Conversion**: Converts MCP tools to LangChain-compatible tools
+4. **Agent Creation**: Creates a tool-calling agent with Claude (Anthropic)
+5. **Interactive Loop**: Processes user queries and generates responses
+
+## Customization
+
+### Adding New Cities
+
+Edit `mcp_server.py` and add entries to the `MOCK_WEATHER_DATA` dictionary:
+
+```python
+MOCK_WEATHER_DATA = {
+    # ... existing cities ...
+    "berlin": {
+        "temperature": 60,
+        "condition": "Partly Cloudy",
+        "humidity": 68,
+        "wind_speed": 9,
+        "forecast": ["Cloudy", "Rainy", "Partly Cloudy", "Sunny", "Sunny"]
+    }
+}
+```
+
+### Changing the LLM
+
+Modify the model name in `weather_app.py`:
+
+```python
+app = WeatherApp(model_name="claude-3-opus-20240229")
+```
+
+### Adding New Tools
+
+1. Add the tool definition in `mcp_server.py`'s `list_tools()` function
+2. Implement the tool logic in the `call_tool()` function
+3. Add the corresponding LangChain tool in `weather_app.py`'s `create_langchain_tools()` method
+
+## Requirements
+
+- Python 3.8+
+- Anthropic API key (for Claude access)
+- Dependencies listed in `requirements.txt`
+
+## Model Context Protocol (MCP)
+
+This project demonstrates the Model Context Protocol, which provides a standardized way to:
+
+- Expose tools and resources to LLMs
+- Create composable, interoperable AI systems
+- Separate data/tool providers from LLM applications
+
+Learn more about MCP at: https://modelcontextprotocol.io
+
+## License
+
+MIT License
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
