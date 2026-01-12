@@ -9,10 +9,15 @@ A demonstration application that combines LangChain with the Model Context Proto
   - `get_forecast`: Get a 5-day weather forecast
   - `list_available_cities`: List all cities with available weather data
 
-- **LangChain Integration**: Intelligent agent that:
+- **Official LangChain MCP Integration**: Uses `langchain-mcp-adapters` for seamless tool conversion:
+  - Automatically discovers and converts MCP tools to LangChain format
+  - Zero manual tool mapping or schema conversion required
+  - One-line tool loading: `tools = await load_mcp_tools(session)`
+
+- **LangChain Agent**: Intelligent assistant that:
   - Understands natural language weather queries
   - Automatically selects and uses appropriate MCP tools
-  - Provides conversational responses
+  - Provides conversational responses powered by Claude
 
 - **Mock Data**: Pre-configured weather data for:
   - New York
@@ -166,18 +171,19 @@ The decorator automatically:
 
 ### LangChain App (`weather_app.py`)
 
-The LangChain application orchestrates the weather assistant with a dynamic tool conversion system:
+The LangChain application orchestrates the weather assistant using the **official `langchain-mcp-adapters`** package:
 
 1. **Connection**: Establishes a connection to the MCP server using stdio transport
-2. **Tool Discovery**: Queries the MCP server for available tools
-3. **Dynamic Tool Conversion**: Automatically converts ANY MCP tool to LangChain format without hard-coding
-   - Factory function creates handlers with proper closures for each tool
-   - Automatic args schema detection from MCP tool's input schema
-   - Supports tools with city parameters, no parameters, or custom parameters
-4. **Agent Creation**: Creates a tool-calling agent with Claude (Anthropic)
-5. **Interactive Loop**: Processes user queries and generates responses
+2. **Tool Loading**: Uses `load_mcp_tools(session)` from `langchain-mcp-adapters` to automatically:
+   - Discover all available tools from the MCP server
+   - Convert them to LangChain-compatible format
+   - Handle all args schema detection and conversion
+3. **Agent Creation**: Creates a tool-calling agent with Claude (Anthropic) and binds the converted tools
+4. **Interactive Loop**: Processes user queries and generates responses
 
-**Key Feature**: When you add a new tool to the MCP server using the `@mcp_tool` decorator, the LangChain app automatically discovers and uses it - no code changes needed in `weather_app.py`!
+**Key Simplification**: The official adapter eliminates the need for custom tool conversion code. Just one line (`load_mcp_tools(session)`) replaces ~60 lines of manual conversion logic!
+
+**Zero-config Tool Discovery**: When you add a new tool to the MCP server using the `@mcp_tool` decorator, the LangChain app automatically discovers and uses it - no code changes needed in `weather_app.py`!
 
 ## Customization
 
@@ -240,17 +246,21 @@ async def get_humidity(arguments: dict) -> list[TextContent]:
 
 **That's it!** The tool is automatically:
 - Registered in the MCP server via the `@mcp_tool` decorator
-- Discovered by the LangChain app when it connects
+- Discovered by `langchain-mcp-adapters` when the app connects
 - Converted to a LangChain-compatible tool with proper args schema
 - Made available to Claude for use in conversations
 
-No changes needed to `weather_app.py` - the dynamic tool conversion handles everything automatically!
+**Zero code changes** needed in `weather_app.py` - the official `langchain-mcp-adapters` package handles everything automatically!
 
 ## Requirements
 
 - Python 3.8+
 - Anthropic API key (for Claude access)
-- Dependencies listed in `requirements.txt`
+- Dependencies listed in `requirements.txt`:
+  - `langchain-mcp-adapters` - Official LangChain MCP integration
+  - `langchain-anthropic` - Anthropic/Claude integration for LangChain
+  - `mcp` - Model Context Protocol library
+  - Other standard dependencies
 
 ## Troubleshooting
 

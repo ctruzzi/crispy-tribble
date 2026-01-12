@@ -3,28 +3,17 @@ LangChain Weather App using MCP Server
 
 This application uses LangChain with the MCP weather service to answer
 weather-related questions using natural language.
+
+Uses the official langchain-mcp-adapters for seamless MCP integration.
 """
 
 import asyncio
-import json
 import os
-from typing import Any, Optional
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import StructuredTool
+from typing import Optional
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_mcp_adapters.tools import load_mcp_tools
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from pydantic import BaseModel, Field
-
-
-# Pydantic models for tool inputs
-class WeatherInput(BaseModel):
-    city: str = Field(description="The city name (e.g., 'New York', 'London', 'Tokyo')")
-
-
-class EmptyInput(BaseModel):
-    pass
 
 
 class WeatherApp:
@@ -68,93 +57,11 @@ class WeatherApp:
         if hasattr(self, 'stdio_transport'):
             await self.stdio_transport.__aexit__(None, None, None)
 
-    async def get_mcp_tools(self):
-        """Get available tools from MCP server."""
-        if not self.session:
-            raise RuntimeError("Not connected to MCP server")
-
-        response = await self.session.list_tools()
-        return response.tools
-
-    async def call_mcp_tool(self, tool_name: str, arguments: dict) -> str:
-        """Call an MCP tool and return the result."""
-        if not self.session:
-            raise RuntimeError("Not connected to MCP server")
-
-        result = await self.session.call_tool(tool_name, arguments)
-        return result.content[0].text
-
-    def _create_tool_handler(self, tool_name: str):
-        """Factory function to create a tool handler with proper closure."""
-        async def handler(**kwargs) -> str:
-            """Dynamic tool handler that calls the MCP tool."""
-            result = await self.call_mcp_tool(tool_name, kwargs)
-            return result
-        return handler
-
-    def _get_args_schema(self, mcp_tool):
-        """Determine the appropriate args schema based on the tool's input schema."""
-        properties = mcp_tool.inputSchema.get("properties", {})
-        required = mcp_tool.inputSchema.get("required", [])
-
-        # If the tool has a "city" parameter, use WeatherInput
-        if "city" in properties:
-            return WeatherInput
-
-        # If the tool has no parameters, use EmptyInput
-        if not properties:
-            return EmptyInput
-
-        # For other cases, dynamically create a Pydantic model
-        # This handles future tools with different parameters
-        fields = {}
-        for prop_name, prop_schema in properties.items():
-            field_type = str  # Default to string type
-            field_description = prop_schema.get("description", "")
-            is_required = prop_name in required
-
-            if is_required:
-                fields[prop_name] = (field_type, Field(description=field_description))
-            else:
-                fields[prop_name] = (field_type, Field(default=None, description=field_description))
-
-        # Create a dynamic Pydantic model
-        return type(f"{mcp_tool.name}_input", (BaseModel,), {"__annotations__": {k: v[0] for k, v in fields.items()}, **{k: v[1] for k, v in fields.items()}})
-
-    def create_langchain_tools(self, mcp_tools):
-        """Convert MCP tools to LangChain tools dynamically.
-
-        This method automatically converts any MCP tool to a LangChain tool
-        without requiring hard-coded handlers for each tool.
-        """
-        langchain_tools = []
-
-        for mcp_tool in mcp_tools:
-            # Create a handler function for this specific tool
-            handler = self._create_tool_handler(mcp_tool.name)
-
-            # Determine the appropriate args schema
-            args_schema = self._get_args_schema(mcp_tool)
-
-            # Create the LangChain tool
-            tool = StructuredTool.from_function(
-                coroutine=handler,
-                name=mcp_tool.name,
-                description=mcp_tool.description,
-                args_schema=args_schema
-            )
-            langchain_tools.append(tool)
-
-        return langchain_tools
-
     async def setup_agent(self):
-        """Set up the LangChain agent with MCP tools."""
-        # Get MCP tools
-        mcp_tools = await self.get_mcp_tools()
-        print(f"✓ Loaded {len(mcp_tools)} tools from MCP server")
-
-        # Convert to LangChain tools
-        self.tools = self.create_langchain_tools(mcp_tools)
+        """Set up the LangChain agent with MCP tools using official adapters."""
+        # Load MCP tools using the official adapter - automatically converts to LangChain format!
+        self.tools = await load_mcp_tools(self.session)
+        print(f"✓ Loaded {len(self.tools)} tools from MCP server")
 
         # Initialize the LLM with tool binding
         print(f"✓ Using model: {self.model_name}")
